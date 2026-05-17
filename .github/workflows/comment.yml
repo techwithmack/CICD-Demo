@@ -1,0 +1,87 @@
+name: "🔍 Gemini Simple Baseline Test"
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  run-baseline-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install google-genai
+
+      - name: Execute Simple Tool Call
+        env:
+          GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          ISSUE_TITLE: "${{ github.event.issue.title }}"
+          ISSUE_BODY: "${{ github.event.issue.body }}"
+          ISSUE_NUMBER: "${{ github.event.issue.number }}"
+          REPO: "${{ github.repository }}"
+        run: |
+          cat << 'EOF' > baseline_agent.py
+          import os
+          import sys
+          import subprocess
+          from google import genai
+          from google.genai import types
+
+          # Initialize Client
+          api_key = os.getenv("GEMINI_API_KEY")
+          client = genai.Client(api_key=api_key)
+
+          # Gather Action Context
+          issue_title = os.getenv("ISSUE_TITLE", "")
+          issue_body = os.getenv("ISSUE_BODY", "")
+          issue_num = os.getenv("ISSUE_NUMBER", "")
+          repo = os.getenv("REPO", "")
+
+          # Define the tool
+          def update_github_issue_body(new_body_content: str):
+              """Updates the current GitHub issue body text with a confirmation message."""
+              print(f"[Tool Triggered] Updating issue body to: {new_body_content}")
+              subprocess.run(["gh", "issue", "edit", issue_num, "--repo", repo, "--body", new_body_content])
+              return "Issue updated successfully."
+
+          system_instruction = """
+          You are a helper assistant. Read the user's input. Your only job is to invoke the `update_github_issue_body` tool and pass the string "received issue" into the `new_body_content` argument. Do not do anything else.
+          """
+
+          print("Sending request to Gemini...")
+          try:
+              response = client.models.generate_content(
+                  model='gemini-2.5-flash',
+                  contents=f"User Issue Title: {issue_title}\nUser Issue Body: {issue_body}",
+                  config=types.GenerateContentConfig(
+                      system_instruction=system_instruction,
+                      tools=[update_github_issue_body],
+                      temperature=0.1
+                  )
+              )
+              
+              if response.function_calls:
+                  for call in response.function_calls:
+                      if call.name == "update_github_issue_body":
+                          update_github_issue_body(call.args["new_body_content"])
+              else:
+                  print("Model responded conversationally instead of calling the tool:")
+                  print(response.text)
+
+          except Exception as e:
+              print(f"Error: {e}")
+              sys.exit(1)
+          EOF
+          python baseline_agent.py
