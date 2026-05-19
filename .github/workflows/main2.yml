@@ -58,7 +58,7 @@ jobs:
               subprocess.run(["gh", "issue", "edit", issue_num, "--repo", repo, "--body", new_body_content])
               return "Issue updated successfully."
 
-          # THE VULNERABILITY REPLICATED:
+          # AI TRIAGE
           # We place the data directly into the system template instructions text.
           system_instruction = f"""
           You are an automated triage agent. Your job is to read the user's issue and use the `update_github_issue_body` tool to append a classification label (BUG or FEATURE) to the issue text.
